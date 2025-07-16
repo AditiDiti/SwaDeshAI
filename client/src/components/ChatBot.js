@@ -2,15 +2,25 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 
 const ChatBot = () => {
-  const [messages, setMessages] = useState(() => {
-    const saved = localStorage.getItem('chat-history');
-    return saved ? JSON.parse(saved) : [];
-  });
-
+  const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [language, setLanguage] = useState('hi-IN');
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const alreadyVisited = sessionStorage.getItem('visited');
+
+    if (!alreadyVisited) {
+      localStorage.removeItem('chat-history');
+      sessionStorage.setItem('visited', 'true');
+    }
+
+    const saved = localStorage.getItem('chat-history');
+    if (saved) {
+      setMessages(JSON.parse(saved));
+    }
+  }, []);
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const recognition = SpeechRecognition ? new SpeechRecognition() : null;
@@ -46,86 +56,39 @@ const ChatBot = () => {
     window.speechSynthesis.speak(utterance);
   };
 
-  const fetchAIReply = async (userText) => {
-    if (!navigator.onLine) {
-      return '⚠️ आप अभी ऑफ़लाइन हैं। कृपया इंटरनेट चालू करें।';
-    }
+const fetchAIReply = async (userText) => {
+  try {
+    const response = await axios.post(
+  'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent', // ✅ correct endpoint
+  {
+    contents: [
+      {
+        parts: [{ text: userText }],
+      },
+    ],
+  },
+  {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    params: {
+      key: process.env.REACT_APP_GEMINI_API_KEY, // ✅ or hardcode temporarily to test
+    },
+  }
+);
 
-    try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-3.5-turbo',
-          messages: [{ role: 'user', content: userText }],
-          temperature: 0.7,
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.REACT_APP_OPENAI_API_KEY}`,
-            'OpenAI-Project': 'proj_xFmglWQiXMmF4wWQ0qCVkE7h',
-          },
-        }
-      );
+  } catch (error) {
+    console.error('Gemini API Error:', error);
+    return '⚠️ Gemini से जवाब प्राप्त करने में त्रुटि हुई।';
+  }
+};
 
-      return response.data.choices[0].message.content;
-    } catch (error) {
-      console.error('OpenAI Error:', error);
-      return 'AI से जवाब प्राप्त करने में त्रुटि हुई।';
-    }
-  };
-
-  const translateText = async (text, targetLang) => {
-    if (targetLang === 'en-IN') return text;
-
-    const langMap = {
-      'hi-IN': 'Hindi',
-      'bn-IN': 'Bengali',
-      'gu-IN': 'Gujarati',
-      'ta-IN': 'Tamil',
-      'te-IN': 'Telugu',
-      'mr-IN': 'Marathi',
-      'pa-IN': 'Punjabi',
-      'kn-IN': 'Kannada',
-      'ml-IN': 'Malayalam',
-      'ur-IN': 'Urdu',
-    };
-
-    const targetLanguageName = langMap[targetLang] || 'Hindi';
-
-    try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-3.5-turbo',
-          messages: [
-            { role: 'system', content: `Translate the following to ${targetLanguageName} but keep medical/health terms unchanged.` },
-            { role: 'user', content: text },
-          ],
-          temperature: 0.3,
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.REACT_APP_OPENAI_API_KEY}`,
-
-            'OpenAI-Project': 'proj_xFmglWQiXMmF4wWQ0qCVkE7h',
-          },
-        }
-      );
-
-      return response.data.choices[0].message.content.trim();
-    } catch (error) {
-      console.error('Translation error:', error);
-      return text;
-    }
-  };
 
   const sendMessage = async () => {
     if (!text.trim()) return;
 
     const userMessage = { sender: 'user', text };
-    setMessages(prev => {
+    setMessages((prev) => {
       const updated = [...prev, userMessage];
       localStorage.setItem('chat-history', JSON.stringify(updated));
       return updated;
@@ -134,17 +97,16 @@ const ChatBot = () => {
     setText('');
     setIsLoading(true);
 
-    const aiReply = await fetchAIReply(text);
-    const translatedReply = await translateText(aiReply, language);
+    const botReply = await fetchAIReply(text);
 
-    const botMessage = { sender: 'bot', text: translatedReply };
-    setMessages(prev => {
+    const botMessage = { sender: 'bot', text: botReply };
+    setMessages((prev) => {
       const updated = [...prev, botMessage];
       localStorage.setItem('chat-history', JSON.stringify(updated));
       return updated;
     });
 
-    speakText(translatedReply);
+    speakText(botReply);
     setIsLoading(false);
   };
 
@@ -180,7 +142,7 @@ const ChatBot = () => {
           border: '1px solid #ccc',
           padding: '10px',
           marginBottom: '10px',
-          backgroundColor: '#fdfdfd'
+          backgroundColor: '#fdfdfd',
         }}
       >
         {messages.map((msg, idx) => (
@@ -188,9 +150,7 @@ const ChatBot = () => {
             <strong>{msg.sender === 'user' ? 'You' : 'Bot'}:</strong> {msg.text}
           </div>
         ))}
-        {isLoading && (
-          <div style={{ textAlign: 'left', fontStyle: 'italic', color: '#666' }}>Bot is typing...</div>
-        )}
+        {isLoading && <div style={{ textAlign: 'left', fontStyle: 'italic', color: '#666' }}>Bot is typing...</div>}
       </div>
 
       <div style={{ width: '350px', display: 'flex', gap: '10px', marginBottom: '10px' }}>
@@ -198,7 +158,7 @@ const ChatBot = () => {
           type="text"
           value={text}
           placeholder="Type or speak your question..."
-          onChange={e => setText(e.target.value)}
+          onChange={(e) => setText(e.target.value)}
           style={{ flex: 1 }}
         />
         <button onClick={sendMessage}>Send</button>
@@ -212,8 +172,10 @@ const ChatBot = () => {
       <div>
         <label>Language: </label>
         <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-          {languageOptions.map(lang => (
-            <option key={lang.code} value={lang.code}>{lang.name}</option>
+          {languageOptions.map((lang) => (
+            <option key={lang.code} value={lang.code}>
+              {lang.name}
+            </option>
           ))}
         </select>
       </div>
