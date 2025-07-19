@@ -14,14 +14,12 @@ const ChatBot = () => {
       localStorage.removeItem('chat-history');
       sessionStorage.setItem('visited', 'true');
     }
-
     const saved = localStorage.getItem('chat-history');
     if (saved) setMessages(JSON.parse(saved));
   }, []);
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const recognition = SpeechRecognition ? new SpeechRecognition() : null;
-
   if (recognition) {
     recognition.lang = language;
     recognition.interimResults = false;
@@ -54,7 +52,7 @@ const ChatBot = () => {
   };
 
   const fetchAIReply = async (userText) => {
-    const cohereKey = "4aj7T4WPvK1YZidYNeOCnYHN1MFjLLWMuPLdIL3N"; // Replace with your valid key
+    const cohereKey = "4aj7T4WPvK1YZidYNeOCnYHN1MFjLLWMuPLdIL3N";
     const endpoint = "https://api.cohere.ai/v1/chat";
 
     const headers = {
@@ -76,9 +74,7 @@ const ChatBot = () => {
         headers,
         body: JSON.stringify(body),
       });
-
       const data = await response.json();
-      console.log("Cohere:", data);
       return data.text || "⚠️ कोई उत्तर नहीं मिला।";
     } catch (err) {
       console.error("Cohere Error:", err);
@@ -110,13 +106,12 @@ const ChatBot = () => {
 
   const searchClinics = async () => {
     if (!clinicQuery.trim()) return;
-
     setIsLoading(true);
     const userMessage = { sender: 'user', text: `Clinics near ${clinicQuery}` };
     setMessages((prev) => [...prev, userMessage]);
 
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=clinic+near+${clinicQuery}`;
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=clinic near ${encodeURIComponent(clinicQuery)}`;
       const response = await fetch(url);
       const data = await response.json();
 
@@ -125,29 +120,24 @@ const ChatBot = () => {
         setMessages((prev) => [...prev, { sender: 'bot', text: msg }]);
         speakText(msg);
       } else {
-        const results = data.slice(0, 5);
-const intro = { sender: 'bot', text: '🧭 Nearby clinics:' };
-const clinicMessages = results.map((place, i) => ({
-  sender: 'bot',
-  text: `${i + 1}. ${place.display_name}`,
-}));
+        const intro = { sender: 'bot', text: '🧭 Nearby clinics:' };
+        const clinicMessages = data.slice(0, 5).map((place) => ({
+          sender: 'bot',
+          text: `📍 <a href="https://www.google.com/maps?q=${encodeURIComponent(place.display_name)}" target="_blank">${place.display_name}</a><br/><br/>`
+        }));
 
-setMessages((prev) => {
-  const updated = [...prev, intro, ...clinicMessages];
-  localStorage.setItem('chat-history', JSON.stringify(updated));
-  return updated;
-});
-
-// Optional: Speak the first one only, or a summary
-speakText(`Nearby clinics found: ${results.length}`);
-
+        setMessages((prev) => {
+          const updated = [...prev, intro, ...clinicMessages];
+          localStorage.setItem('chat-history', JSON.stringify(updated));
+          return updated;
+        });
+        speakText(`Nearby clinics found: ${clinicMessages.length}`);
       }
     } catch (err) {
+      console.error(err);
       const msg = "⚠️ Error fetching clinic data.";
       setMessages((prev) => [...prev, { sender: 'bot', text: msg }]);
-      console.error(err);
     }
-
     setIsLoading(false);
   };
 
@@ -171,67 +161,98 @@ speakText(`Nearby clinics found: ${results.length}`);
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <h2>🤖 भारत हेल्थ चैटबोट</h2>
+    <>
+      <style>
+        {`
+          .chat-message a {
+            text-decoration: none;
+            color: #0077cc;
+          }
 
-      <div
-        id="chat-window"
-        style={{
-          height: '400px',
-          width: '350px',
-          overflowY: 'auto',
-          border: '1px solid #ccc',
-          padding: '10px',
-          marginBottom: '10px',
-          backgroundColor: '#fdfdfd',
-        }}
-      >
-        {messages.map((msg, idx) => (
-          <div key={idx} style={{ textAlign: msg.sender === 'user' ? 'right' : 'left', marginBottom: '6px' }}>
-            <strong>{msg.sender === 'user' ? 'You' : 'Bot'}:</strong> {msg.text}
-          </div>
-        ))}
-        {isLoading && <div style={{ textAlign: 'left', fontStyle: 'italic', color: '#666' }}>Bot is typing...</div>}
-      </div>
+          .chat-message a:hover {
+            text-decoration: underline;
+          }
+        `}
+      </style>
 
-      <div style={{ width: '350px', display: 'flex', gap: '10px', marginBottom: '10px' }}>
-        <input
-          type="text"
-          value={text}
-          placeholder="Type or speak your question..."
-          onChange={(e) => setText(e.target.value)}
-          style={{ flex: 1 }}
-        />
-        <button onClick={sendMessage}>Send</button>
-        <button onClick={startListening}>🎤</button>
-      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <h2>🤖 भारत हेल्थ चैटबोट</h2>
 
-      <div style={{ marginBottom: '10px' }}>
-        <strong>{isListening ? '🎙️ Listening...' : '🎧 Mic Idle'}</strong>
-      </div>
+        <div
+          id="chat-window"
+          style={{
+            height: '400px',
+            width: '350px',
+            overflowY: 'auto',
+            border: '1px solid #ccc',
+            padding: '10px',
+            marginBottom: '10px',
+            backgroundColor: '#fdfdfd'
+          }}
+        >
+          {messages.map((msg, idx) => {
+            const isBot = msg.sender === 'bot';
+            const isClinicLink = msg.text.includes('<a href="https://www.google.com/maps');
 
-      <div style={{ marginBottom: '15px' }}>
-        <label>Language: </label>
-        <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-          {languageOptions.map((lang) => (
-            <option key={lang.code} value={lang.code}>
-              {lang.name}
-            </option>
-          ))}
-        </select>
-      </div>
+            return (
+              <div
+                key={idx}
+                className="chat-message"
+                style={{
+                  textAlign: isBot ? 'left' : 'right',
+                  marginBottom: '14px',
+                  lineHeight: '1.5',
+                  fontSize: '14px'
+                }}
+              >
+                {!isClinicLink && (
+                  <strong>{isBot ? 'Bot' : 'You'}:</strong>
+                )}
+                <span dangerouslySetInnerHTML={{ __html: msg.text }} />
+              </div>
+            );
+          })}
 
-      <div style={{ width: '350px', display: 'flex', gap: '10px', marginBottom: '10px' }}>
-        <input
-          type="text"
-          placeholder="Enter your city (e.g., Delhi)"
-          value={clinicQuery}
-          onChange={(e) => setClinicQuery(e.target.value)}
-          style={{ flex: 1 }}
-        />
-        <button onClick={searchClinics}>Find Clinics</button>
+          {isLoading && <div style={{ textAlign: 'left', fontStyle: 'italic', color: '#666' }}>Bot is typing...</div>}
+        </div>
+
+        <div style={{ width: '350px', display: 'flex', gap: '10px', marginBottom: '10px' }}>
+          <input
+            type="text"
+            value={text}
+            placeholder="Type or speak your question..."
+            onChange={(e) => setText(e.target.value)}
+            style={{ flex: 1 }}
+          />
+          <button onClick={sendMessage}>Send</button>
+          <button onClick={startListening}>🎤</button>
+        </div>
+
+        <div style={{ marginBottom: '10px' }}>
+          <strong>{isListening ? '🎙️ Listening...' : '🎧 Mic Idle'}</strong>
+        </div>
+
+        <div style={{ marginBottom: '15px' }}>
+          <label>Language: </label>
+          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+            {languageOptions.map((lang) => (
+              <option key={lang.code} value={lang.code}>{lang.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ width: '350px', display: 'flex', gap: '10px', marginBottom: '10px' }}>
+          <input
+            type="text"
+            placeholder="Enter your city (e.g., Delhi)"
+            value={clinicQuery}
+            onChange={(e) => setClinicQuery(e.target.value)}
+            style={{ flex: 1 }}
+          />
+          <button onClick={searchClinics}>Find Clinics</button>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 
