@@ -65,45 +65,42 @@ const ChatBot = () => {
   };
 
 const fetchAIReply = async (userText) => {
-  const apiKey = "YOUR_VALID_API_KEY"; // Replace this safely
-  const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`;
+  const cohereKey = "4aj7T4WPvK1YZidYNeOCnYHN1MFjLLWMuPLdIL3N"; // 🔒 Replace with your real key
+  const endpoint = "https://api.cohere.ai/v1/chat";
 
-  const requestBody = {
-    contents: [
-      {
-        role: "user", // ✅ This is REQUIRED in v1
-        parts: [
-          {
-            text: userText,
-          },
-        ],
-      },
-    ],
+  const headers = {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${cohereKey}`,
+  };
+
+  const body = {
+    message: userText,
+    model: "command-r-plus", // or "command-r"
+    temperature: 0.7,         // you can tweak this
+    max_tokens: 300,
+    chat_history: [],         // you can add history if you want
   };
 
   try {
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
+      headers,
+      body: JSON.stringify(body),
     });
 
     const data = await response.json();
-    console.log("Gemini Raw Response:", data);
+    console.log("Cohere Raw Response:", data);
 
-    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-      return data.candidates[0].content.parts[0].text;
+    if (data.text) {
+      return data.text;
     } else {
-      return "⚠️ Gemini से जवाब प्राप्त नहीं हुआ।";
+      return "⚠️ Cohere से जवाब नहीं मिला।";
     }
   } catch (error) {
-    console.error("Gemini API Error:", error);
-    return "⚠️ Gemini से जवाब प्राप्त करने में त्रुटि हुई।";
+    console.error("Cohere API Error:", error);
+    return "⚠️ Cohere API से संपर्क नहीं हो सका।";
   }
 };
-
 
 
   const sendMessage = async () => {
