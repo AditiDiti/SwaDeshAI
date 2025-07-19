@@ -53,35 +53,57 @@ const ChatBot = () => {
   const speakText = (message) => {
     const utterance = new SpeechSynthesisUtterance(message);
     utterance.lang = language;
+
+    // Optional: match language voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const matchedVoice = voices.find((v) => v.lang === language);
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
+    }
+
     window.speechSynthesis.speak(utterance);
   };
 
 const fetchAIReply = async (userText) => {
-  try {
-    const response = await axios.post(
-  'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent', // ✅ correct endpoint
-  {
+  const apiKey = "YOUR_VALID_API_KEY"; // Replace this safely
+  const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`;
+
+  const requestBody = {
     contents: [
       {
-        parts: [{ text: userText }],
+        role: "user", // ✅ This is REQUIRED in v1
+        parts: [
+          {
+            text: userText,
+          },
+        ],
       },
     ],
-  },
-  {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    params: {
-      key: process.env.REACT_APP_GEMINI_API_KEY, // ✅ or hardcode temporarily to test
-    },
-  }
-);
+  };
 
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const data = await response.json();
+    console.log("Gemini Raw Response:", data);
+
+    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+      return data.candidates[0].content.parts[0].text;
+    } else {
+      return "⚠️ Gemini से जवाब प्राप्त नहीं हुआ।";
+    }
   } catch (error) {
-    console.error('Gemini API Error:', error);
-    return '⚠️ Gemini से जवाब प्राप्त करने में त्रुटि हुई।';
+    console.error("Gemini API Error:", error);
+    return "⚠️ Gemini से जवाब प्राप्त करने में त्रुटि हुई।";
   }
 };
+
 
 
   const sendMessage = async () => {
@@ -97,7 +119,7 @@ const fetchAIReply = async (userText) => {
     setText('');
     setIsLoading(true);
 
-    const botReply = await fetchAIReply(text);
+    const botReply = await fetchAIReply(text, language);
 
     const botMessage = { sender: 'bot', text: botReply };
     setMessages((prev) => {
