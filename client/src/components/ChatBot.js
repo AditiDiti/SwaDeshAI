@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
 
 const ChatBot = () => {
   const [messages, setMessages] = useState([]);
@@ -7,19 +6,17 @@ const ChatBot = () => {
   const [language, setLanguage] = useState('hi-IN');
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [clinicQuery, setClinicQuery] = useState('');
 
   useEffect(() => {
     const alreadyVisited = sessionStorage.getItem('visited');
-
     if (!alreadyVisited) {
       localStorage.removeItem('chat-history');
       sessionStorage.setItem('visited', 'true');
     }
 
     const saved = localStorage.getItem('chat-history');
-    if (saved) {
-      setMessages(JSON.parse(saved));
-    }
+    if (saved) setMessages(JSON.parse(saved));
   }, []);
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -33,19 +30,16 @@ const ChatBot = () => {
 
   const startListening = () => {
     if (!recognition) {
-      alert('Speech Recognition not supported in this browser.');
+      alert('Speech Recognition not supported.');
       return;
     }
-
     setIsListening(true);
     recognition.start();
-
     recognition.onresult = (event) => {
       const voiceText = event.results[0][0].transcript;
       setText(voiceText);
       setIsListening(false);
     };
-
     recognition.onerror = () => setIsListening(false);
     recognition.onend = () => setIsListening(false);
   };
@@ -53,59 +47,47 @@ const ChatBot = () => {
   const speakText = (message) => {
     const utterance = new SpeechSynthesisUtterance(message);
     utterance.lang = language;
-
-    // Optional: match language voice if available
     const voices = window.speechSynthesis.getVoices();
     const matchedVoice = voices.find((v) => v.lang === language);
-    if (matchedVoice) {
-      utterance.voice = matchedVoice;
-    }
-
+    if (matchedVoice) utterance.voice = matchedVoice;
     window.speechSynthesis.speak(utterance);
   };
 
-const fetchAIReply = async (userText) => {
-  const cohereKey = "4aj7T4WPvK1YZidYNeOCnYHN1MFjLLWMuPLdIL3N"; // 🔒 Replace with your real key
-  const endpoint = "https://api.cohere.ai/v1/chat";
+  const fetchAIReply = async (userText) => {
+    const cohereKey = "4aj7T4WPvK1YZidYNeOCnYHN1MFjLLWMuPLdIL3N"; // Replace with your valid key
+    const endpoint = "https://api.cohere.ai/v1/chat";
 
-  const headers = {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${cohereKey}`,
-  };
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${cohereKey}`,
+    };
 
-  const body = {
-    message: userText,
-    model: "command-r-plus", // or "command-r"
-    temperature: 0.7,         // you can tweak this
-    max_tokens: 300,
-    chat_history: [],         // you can add history if you want
-  };
+    const body = {
+      message: userText,
+      model: "command-r-plus",
+      temperature: 0.7,
+      max_tokens: 300,
+      chat_history: [],
+    };
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
 
-    const data = await response.json();
-    console.log("Cohere Raw Response:", data);
-
-    if (data.text) {
-      return data.text;
-    } else {
-      return "⚠️ Cohere से जवाब नहीं मिला।";
+      const data = await response.json();
+      console.log("Cohere:", data);
+      return data.text || "⚠️ कोई उत्तर नहीं मिला।";
+    } catch (err) {
+      console.error("Cohere Error:", err);
+      return "⚠️ AI से संपर्क नहीं हो सका।";
     }
-  } catch (error) {
-    console.error("Cohere API Error:", error);
-    return "⚠️ Cohere API से संपर्क नहीं हो सका।";
-  }
-};
-
+  };
 
   const sendMessage = async () => {
     if (!text.trim()) return;
-
     const userMessage = { sender: 'user', text };
     setMessages((prev) => {
       const updated = [...prev, userMessage];
@@ -115,17 +97,57 @@ const fetchAIReply = async (userText) => {
 
     setText('');
     setIsLoading(true);
-
-    const botReply = await fetchAIReply(text, language);
-
+    const botReply = await fetchAIReply(text);
     const botMessage = { sender: 'bot', text: botReply };
     setMessages((prev) => {
       const updated = [...prev, botMessage];
       localStorage.setItem('chat-history', JSON.stringify(updated));
       return updated;
     });
-
     speakText(botReply);
+    setIsLoading(false);
+  };
+
+  const searchClinics = async () => {
+    if (!clinicQuery.trim()) return;
+
+    setIsLoading(true);
+    const userMessage = { sender: 'user', text: `Clinics near ${clinicQuery}` };
+    setMessages((prev) => [...prev, userMessage]);
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=clinic+near+${clinicQuery}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.length === 0) {
+        const msg = `⚠️ No clinics found near "${clinicQuery}".`;
+        setMessages((prev) => [...prev, { sender: 'bot', text: msg }]);
+        speakText(msg);
+      } else {
+        const results = data.slice(0, 5);
+const intro = { sender: 'bot', text: '🧭 Nearby clinics:' };
+const clinicMessages = results.map((place, i) => ({
+  sender: 'bot',
+  text: `${i + 1}. ${place.display_name}`,
+}));
+
+setMessages((prev) => {
+  const updated = [...prev, intro, ...clinicMessages];
+  localStorage.setItem('chat-history', JSON.stringify(updated));
+  return updated;
+});
+
+// Optional: Speak the first one only, or a summary
+speakText(`Nearby clinics found: ${results.length}`);
+
+      }
+    } catch (err) {
+      const msg = "⚠️ Error fetching clinic data.";
+      setMessages((prev) => [...prev, { sender: 'bot', text: msg }]);
+      console.error(err);
+    }
+
     setIsLoading(false);
   };
 
@@ -188,7 +210,7 @@ const fetchAIReply = async (userText) => {
         <strong>{isListening ? '🎙️ Listening...' : '🎧 Mic Idle'}</strong>
       </div>
 
-      <div>
+      <div style={{ marginBottom: '15px' }}>
         <label>Language: </label>
         <select value={language} onChange={(e) => setLanguage(e.target.value)}>
           {languageOptions.map((lang) => (
@@ -197,6 +219,17 @@ const fetchAIReply = async (userText) => {
             </option>
           ))}
         </select>
+      </div>
+
+      <div style={{ width: '350px', display: 'flex', gap: '10px', marginBottom: '10px' }}>
+        <input
+          type="text"
+          placeholder="Enter your city (e.g., Delhi)"
+          value={clinicQuery}
+          onChange={(e) => setClinicQuery(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <button onClick={searchClinics}>Find Clinics</button>
       </div>
     </div>
   );
