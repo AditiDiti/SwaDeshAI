@@ -220,17 +220,30 @@ const ChatBot = () => {
 
             return (
               <div
-                key={idx}
-                className="chat-message"
-                style={{
-                  textAlign: isBot ? 'left' : 'right',
-                  marginBottom: '14px',
-                  lineHeight: '1.5',
-                  fontSize: '14px'
-                }}
-              >
-                <span dangerouslySetInnerHTML={{ __html: msg.text }} />
-              </div>
+  key={idx}
+  style={{
+    display: 'flex',
+    justifyContent: isBot ? 'flex-start' : 'flex-end',
+    marginBottom: '8px',
+  }}
+>
+  <div
+    className="chat-message"
+    style={{
+      backgroundColor: isBot ? '#E3F2FD' : '#D3D3D3',
+      color: '#212529',
+      borderRadius: '12px',
+      padding: '8px 12px',
+      maxWidth: '80%',
+      wordWrap: 'break-word',
+      fontSize: '14px',
+    }}
+  >
+    <span dangerouslySetInnerHTML={{ __html: msg.text }} />
+  </div>
+</div>
+
+
             );
           })}
 
