@@ -141,6 +141,30 @@ const ChatBot = () => {
     setIsLoading(false);
   };
 
+  const healthTips = [
+    "🩹 For small cuts, rinse with clean water and apply antiseptic.",
+    "🔥 For minor burns, hold under cool running water for 10 minutes.",
+    "🤒 For fever, rest well and drink plenty of fluids.",
+    "🚶‍♀️ Walk for at least 30 minutes daily to improve heart health.",
+    "🧴 Use sunscreen when outdoors to prevent sunburn.",
+    "🧘‍♂️ Practice deep breathing or yoga to reduce stress.",
+    "💧 Stay hydrated — aim for 8 glasses of water daily.",
+    "🧼 Wash hands frequently to prevent infections.",
+  ];
+
+  const sendHealthTips = () => {
+    const tips = healthTips.map((tip) => ({ sender: 'bot', text: tip }));
+    setMessages((prev) => {
+      const updated = [...prev, ...tips];
+      localStorage.setItem('chat-history', JSON.stringify(updated));
+      return updated;
+    });
+
+    tips.forEach((tip, i) => {
+      setTimeout(() => speakText(tip.text), i * 2500);
+    });
+  };
+
   useEffect(() => {
     const chatDiv = document.getElementById('chat-window');
     if (chatDiv) chatDiv.scrollTop = chatDiv.scrollHeight;
@@ -205,9 +229,6 @@ const ChatBot = () => {
                   fontSize: '14px'
                 }}
               >
-                {!isClinicLink && (
-                  <strong>{isBot ? 'Bot' : 'You'}:</strong>
-                )}
                 <span dangerouslySetInnerHTML={{ __html: msg.text }} />
               </div>
             );
@@ -250,6 +271,12 @@ const ChatBot = () => {
             style={{ flex: 1 }}
           />
           <button onClick={searchClinics}>Find Clinics</button>
+        </div>
+
+        <div style={{ width: '350px', marginBottom: '10px' }}>
+          <button onClick={sendHealthTips} style={{ width: '100%' }}>
+            🩺 Show First Aid & Wellness Tips
+          </button>
         </div>
       </div>
     </>
