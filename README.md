@@ -1,4 +1,4 @@
-#[ Bharat Health Ally (भारत हेल्थ साथी)](https://swadeshai.vercel.app/)
+# Bharat Health Ally (भारत हेल्थ साथी)
 
 A multilingual health chatbot web app that provides first aid tips, finds nearby clinics, and answers health-related queries in multiple Indian languages.
 
