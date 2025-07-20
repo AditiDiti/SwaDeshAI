@@ -200,7 +200,12 @@ const ChatBot = () => {
       </style>
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <h2>🤖 भारत हेल्थ चैटबोट</h2>
+        <div style={{ textAlign: 'center', marginBottom: '10px', lineHeight: '1.2' }}>
+  <h2 style={{ margin: '0', fontSize: '1.4rem' }}>🤖 भारत हेल्थ साथी</h2>
+  <div style={{ fontSize: '1rem', color: '#555' }}>Bharat Health Ally</div>
+</div>
+
+
 
         <div
           id="chat-window"
