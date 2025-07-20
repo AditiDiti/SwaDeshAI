@@ -10,8 +10,14 @@ const ChatBot = () => {
   const [clinicQuery, setClinicQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);   
   const messagesEndRef = useRef(null);
-
-
+  const [hoveredMessageIndex, setHoveredMessageIndex] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [userText, setUserText] = useState('');
+  useEffect(() => {
+  const timer = setTimeout(() => setShowWelcome(false), 5000); // hide after 5 sec
+  return () => clearTimeout(timer);
+}, []);
   useEffect(() => {
     const alreadyVisited = sessionStorage.getItem('visited');
     if (!alreadyVisited) {
@@ -21,7 +27,40 @@ const ChatBot = () => {
     const saved = localStorage.getItem('chat-history');
     if (saved) setMessages(JSON.parse(saved));
   }, []);
+  useEffect(() => {
+  const handleOffline = () => {
+    setMessages(prev => [
+      ...prev,
+      {
+        sender: 'bot',
+        text: '⚠️ You are offline. First aid tips are still available.',
+      },
+    ]);
+  };
 
+
+
+  window.addEventListener('offline', handleOffline);
+
+  return () => {
+    window.removeEventListener('offline', handleOffline);
+  };
+}, []);
+
+ useEffect(() => {
+    if (userText.trim() !== '') {
+      setShowWelcome(false);
+    }
+  }, [userText]);
+useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowWelcome(false);
+    }, 5000); // 5 seconds
+
+    return () => clearTimeout(timer); // Clean up
+  }, []);
+
+  
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const recognition = SpeechRecognition ? new SpeechRecognition() : null;
   if (recognition) {
@@ -36,7 +75,6 @@ const ChatBot = () => {
       return;
     }
     setIsListening(true);
-    recognition.start();
     recognition.onresult = (event) => {
       const voiceText = event.results[0][0].transcript;
       setText(voiceText);
@@ -44,6 +82,7 @@ const ChatBot = () => {
     };
     recognition.onerror = () => setIsListening(false);
     recognition.onend = () => setIsListening(false);
+     recognition.start();
   };
 const scrollToBottom = () => {
   messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -65,19 +104,19 @@ useEffect(() => {
   const cohereKey = "4aj7T4WPvK1YZidYNeOCnYHN1MFjLLWMuPLdIL3N";
   const endpoint = "https://api.cohere.ai/v1/chat";
 
-  const languageMap = {
-    'en-IN': 'English',
-    'hi-IN': 'Hindi',
-    'bn-IN': 'Bengali',
-    'gu-IN': 'Gujarati',
-    'ta-IN': 'Tamil',
-    'te-IN': 'Telugu',
-    'mr-IN': 'Marathi',
-    'pa-IN': 'Punjabi',
-    'kn-IN': 'Kannada',
-    'ml-IN': 'Malayalam',
-    'ur-IN': 'Urdu'
-  };
+ const languageMap = {
+  'en-IN': 'English',
+  'hi-IN': 'हिन्दी',
+  'bn-IN': 'বাংলা',
+  'gu-IN': 'ગુજરાતી',
+  'ta-IN': 'தமிழ்',
+  'te-IN': 'తెలుగు',
+  'mr-IN': 'मराठी',
+  'pa-IN': 'ਪੰਜਾਬੀ',
+  'kn-IN': 'ಕನ್ನಡ',
+  'ml-IN': 'മലയാളം',
+  'ur-IN': 'اردو'
+};
 
   const selectedLanguage = languageMap[language] || 'English';
 
@@ -87,7 +126,7 @@ useEffect(() => {
   };
 
     const body = {
-    message: `Answer in ${selectedLanguage}. If possible, keep it short (1–2 sentences), but ensure the answer is complete and not cut off. Respond to: ${userText}`,
+    message: `Answer in ${selectedLanguage}. Keep it short (1–2 sentences), but make sure it is clear and complete. Answer this: ${userText}`,
     model: "command-r-plus",
     temperature: 0.3, // More focused/precise
     max_tokens: 300, // More room for complete short answers
@@ -109,15 +148,23 @@ useEffect(() => {
   }
 };
 
+
+
  const sendMessage = async () => {
   if (!text.trim()) return;
 
-  const userMessage = { sender: 'user', text };
+  const userMessage = {
+    sender: 'user',
+    text,
+    replyTo: replyTo?.text || null  // ⬅️ include reply reference
+  };
+
   setMessages((prev) => {
     const updated = [...prev, userMessage];
     localStorage.setItem('chat-history', JSON.stringify(updated));
     return updated;
   });
+  
 
  if (expectingLocation) {
   const city = text.trim();
@@ -152,10 +199,16 @@ useEffect(() => {
   setText('');
   return;
 }
-
+   
     setText('');
     setIsLoading(true);
-    const botReply = await fetchAIReply(text);
+    const prompt = replyTo
+  ? `Follow-up on: "${replyTo.text}". User says: "${text}"`
+  : text;
+
+const botReply = await fetchAIReply(prompt, language);
+
+
 
 // Optional trimming logic (to avoid extremely long replies)
 const maxLength = 400;
@@ -171,8 +224,7 @@ setMessages((prev) => {
   localStorage.setItem('chat-history', JSON.stringify(updated));
   return updated;
 });
-
-speakText(botReply);  // Use full response
+ // Use full response
  // use shortened text here too
 setIsLoading(false);
 
@@ -187,7 +239,6 @@ setIsLoading(false);
     return;
   }
 
-  // Simulate fetching clinics (replace with real API if needed)
   const fakeClinics = [
     { name: "Apollo Clinic", address: `${clinicQuery} Apollo Clinic` },
     { name: "CityCare Hospital", address: `${clinicQuery} CityCare Hospital` },
@@ -275,16 +326,17 @@ const searchClinicsWithNominatim = async (city) => {
       <style>
         {`
           .chat-message a {
-            text-decoration: none;
-            color: #0077cc;
-          }
+  text-decoration: none;
+  color: white; 
+}
+
           .chat-message a:hover {
             text-decoration: underline;
           }
         `}
       </style>
 
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' , marginTop: '22px'}}>
 
       <div style={{
   width: '100%',
@@ -301,7 +353,7 @@ const searchClinicsWithNominatim = async (city) => {
     style={{
       position: 'absolute',
       left: '0',
-      fontSize: '20px',
+      fontSize: '31px',
       background: 'none',
       border: 'none',
       cursor: 'pointer',
@@ -315,7 +367,7 @@ const searchClinicsWithNominatim = async (city) => {
   <div
     style={{
       position: 'absolute',
-      top: '40px',
+      top: '80px',
       left: '0',
       background: '#fff',
       borderRadius: '12px',
@@ -326,6 +378,7 @@ const searchClinicsWithNominatim = async (city) => {
   >
     <div
       onClick={() => {
+        
         setMessages([]);         // Clear all chat messages
   setText('');             // Clear the input field
   localStorage.removeItem('chat-history');
@@ -336,7 +389,7 @@ const searchClinicsWithNominatim = async (city) => {
         cursor: 'pointer',
         borderBottom: '1px solid #eee',
       }}
-      onMouseEnter={e => (e.target.style.background = '#f0f0f0')}
+      onMouseEnter={e => (e.target.style.background = '#f0f0f0ff')}
       onMouseLeave={e => (e.target.style.background = '#fff')}
     >
       New Chat
@@ -383,12 +436,22 @@ const searchClinicsWithNominatim = async (city) => {
 
 
   {/* Heading Centered */}
-  <div style={{ textAlign: 'center' }}>
-    <h2 style={{ margin: '0', fontSize: '1.4rem' }}>🤖 भारत हेल्थ साथी</h2>
-    <div style={{ fontSize: '1rem', color: '#555' }}>
-      Bharat Health Ally
-    </div>
-  </div>
+  <div style={{
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '10px',
+  marginBottom: '20px',
+  flexWrap: 'nowrap',
+  whiteSpace: 'nowrap',
+  marginTop: '18px'
+  
+}}>
+  <span style={{ fontSize: '1.8rem' }}>🏥</span>
+  <span style={{ fontSize: '1.6rem', fontWeight: 'bold' }}>भारत हेल्थ साथी</span>
+  <span style={{ fontSize: '1.5rem', color: '#09065eff'}}> Bharat Health Ally</span>
+</div>
+
 </div>
 
 
@@ -397,7 +460,7 @@ const searchClinicsWithNominatim = async (city) => {
   id="chat-window"
   style={{
     height: '480px',
-    width: '500px',
+    width: '490px',
     overflowY: 'auto',
     border: '1px solid #ccc',
     padding: '10px',
@@ -407,31 +470,114 @@ const searchClinicsWithNominatim = async (city) => {
     boxShadow: '0 4px 12px rgba(173, 216, 230, 0.5)' // ⤴️ Light blue shadow
   }}
 >
-          {messages.map((msg, idx) => {
-            const isBot = msg.sender === 'bot';
-            return (
-              <div key={idx} style={{
-                display: 'flex',
-                justifyContent: isBot ? 'flex-start' : 'flex-end',
-                marginBottom: '8px',
-              }}>
-                <div className="chat-message" style={{
-                  backgroundColor: isBot ? '#E3F2FD' : '#D3D3D3',
-                  color: '#212529',
-                  borderRadius: '12px',
-                  padding: '8px 12px',
-                  maxWidth: '80%',
-                  whiteSpace: 'normal',
-overflow: 'visible',
-wordBreak: 'break-word',
-                  wordWrap: 'break-word',
-                  fontSize: '14px',
-                }}>
-                  <span dangerouslySetInnerHTML={{ __html: msg.text }} />
-                </div>
-              </div>
-            );
-          })}
+  {showWelcome && (
+  <div style={{
+    height:'90px',
+    color: '#007bff',
+    backgroundColor: '#e6f2ff',
+    padding: '10px 20px',
+    borderRadius: '10px',
+    marginBottom: '10px',
+    textAlign: 'center',
+    fontSize: '1.2rem',
+    fontWeight: '500'
+  }}>
+    <h3>👋  Welcome to सेहत साथी!</h3>
+  </div>
+  
+)}
+
+      {messages.map((msg, idx) => {
+  const isBot = msg.sender === 'bot';
+  const isHovered = hoveredMessageIndex === idx;
+
+  return (
+    <div
+      key={idx}
+      onMouseEnter={() => setHoveredMessageIndex(idx)}
+      onMouseLeave={() => setHoveredMessageIndex(null)}
+      style={{
+        display: 'flex',
+        justifyContent: isBot ? 'flex-start' : 'flex-end',
+        marginBottom: '8px',
+        position: 'relative'
+      }}
+    >
+      <div className="chat-message" style={{
+        backgroundColor: isBot ? '#164c85ff' : '#c4e9f7ff',   // bot: dark blue, user: light blue
+color: isBot ? '#ffffffff' : '#060011ff',            // bot text: white, user text: black
+
+        borderRadius: '12px',
+        padding: '8px 12px',
+        maxWidth: '80%',
+        whiteSpace: 'normal',
+        wordBreak: 'break-word',
+        fontSize: '14px',
+        position: 'relative'
+      }}>
+        {msg.replyTo && (
+  <div style={{
+    backgroundColor: '#e0e0e0',
+    padding: '4px 8px',
+    borderLeft: '3px solid #0077cc',
+    borderRadius: '6px',
+    fontSize: '12px',
+    marginBottom: '4px',
+    color: '#333'
+  }}>
+    {msg.replyTo}
+  </div>
+)}
+
+        <span dangerouslySetInnerHTML={{ __html: msg.text }} />
+      
+
+
+       {isBot && isHovered && (
+  <div style={{
+    position: 'absolute',
+    top: '50%',
+    right: '-65px',
+    transform: 'translateY(-50%)',
+    display: 'flex',
+    alignItems: 'center'
+  }}>
+    <button
+      onClick={() => {
+    setReplyTo(msg);   // Set message to reply
+    setText('');       // Optional: clear input
+  }}
+      style={{
+        fontSize: '16px',
+        border: 'none',
+        background: 'transparent',
+        cursor: 'pointer'
+      }}
+      title="Reply"
+    >
+      ↪
+    </button>
+    <button
+      onClick={() => speakText(msg.text)}
+      style={{
+        fontSize: '16px',
+        border: 'none',
+        background: 'transparent',
+        cursor: 'pointer'
+      }}
+      title="Read Aloud"
+    >
+      🔈
+    </button>
+  </div>
+)}
+
+
+      </div>
+    </div>
+  );
+})}
+
           <div ref={messagesEndRef} />
 
           {isLoading && <div style={{ textAlign: 'left', fontStyle: 'italic', color: '#666' }}>Bot is typing...</div>}
@@ -439,7 +585,7 @@ wordBreak: 'break-word',
 
         {/* Message Input & Controls */}
         <div style={{
-  width: '500px',
+  width: '490px',
   display: 'flex',
   alignItems: 'center',
   marginBottom: '12px',
@@ -449,6 +595,42 @@ wordBreak: 'break-word',
   boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
   border: '1px solid #ccc'
 }}>
+  {replyTo && (
+  <div style={{
+    backgroundColor: '#f1f1f1',
+    borderLeft: '4px solid #0077cc',
+    padding: '6px 10px',
+    borderRadius: '8px',
+    marginBottom: '6px',
+    width: '490px', 
+    maxHeight: '60px', 
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  }}>
+    <div style={{ overflow: 'hidden' }}>
+      <div style={{ fontWeight: 'bold', fontSize: '13px' }}>
+        Replying to {replyTo.sender === 'bot' ? 'Bot' : 'You'}:
+      </div>
+      <div style={{ fontSize: '12px', color: '#333' }}>{replyTo.text}</div>
+    </div>
+    <button onClick={() => setReplyTo(null)} style={{
+      border: 'none',
+      background: 'none',
+      cursor: 'pointer',
+      fontSize: '14px',
+      color: '#0077cc',
+      marginLeft: '8px'
+    }}>
+      ✖
+    </button>
+  </div>
+)}
+
+
   <input
     type="text"
     value={text}
@@ -495,19 +677,6 @@ wordBreak: 'break-word',
   >
     🎤
   </button>
-  <button
-    onClick={() => speakText(text)}
-    title="Read Aloud"
-    style={{
-      background: 'none',
-      border: 'none',
-      fontSize: '18px',
-      cursor: 'pointer',
-      marginLeft: '6px'
-    }}
-  >
-    🔊
-  </button>
 </div>
 
 
@@ -517,22 +686,35 @@ wordBreak: 'break-word',
   alignItems: 'center', 
   gap: '10px' 
 }}>
-  <label style={{ fontWeight: 'bold' }}>Language:</label>
-  <select
-    value={language}
-    onChange={(e) => setLanguage(e.target.value)}
-    style={{
-      padding: '6px 12px',
-      borderRadius: '12px',         // ✅ Curved
-      boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)', // ✅ Shadow
-      border: '1px solid #ccc',
-      outline: 'none',
-      cursor: 'pointer',
-      backgroundColor: '#fff',
-      fontSize: '14px',
-      minWidth: '160px'
-    }}
-  >
+  <label
+  style={{
+    fontWeight: 'bold',
+    color: '#003366', // Dark blue for "Language" label
+    marginRight: '8px',
+    fontSize: '15px',
+  }}
+>
+  Language:
+</label>
+
+<select
+  value={language}
+  onChange={(e) => setLanguage(e.target.value)}
+  style={{
+    padding: '6px 12px',
+    borderRadius: '20px', // More curved
+    boxShadow: '0 2px 6px rgba(69, 127, 204, 0.1)',
+    border: '1px solid #ccc',
+    outline: 'none',
+    cursor: 'pointer',
+    backgroundColor: '#fff',
+    fontSize: '14px',
+    minWidth: '160px',
+    transition: 'all 0.3s ease-in-out',
+  }}
+  onMouseEnter={(e) => (e.target.style.backgroundColor = '#e6f0ff')} // Light blue on hover
+  onMouseLeave={(e) => (e.target.style.backgroundColor = '#fff')}    // Reset on leave
+>
     {languageOptions.map((lang) => (
       <option key={lang.code} value={lang.code}>
         {lang.name}
