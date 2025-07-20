@@ -12,7 +12,7 @@ A multilingual health chatbot web app that provides first aid tips, finds nearby
 - Responsive and modern UI
 
 ## Project Link
-[🔗]https://swadeshai.vercel.app/
+🔗 https://swadeshai.vercel.app/
 
 ## Prerequisites
 
