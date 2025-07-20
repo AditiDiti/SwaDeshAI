@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 const ChatBot = () => {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
-  const [language, setLanguage] = useState('hi-IN');
+  const [expectingLocation, setExpectingLocation] = useState(false);
+  const [language, setLanguage] = useState('en-IN');
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [clinicQuery, setClinicQuery] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);   
+  const messagesEndRef = useRef(null);
+
 
   useEffect(() => {
     const alreadyVisited = sessionStorage.getItem('visited');
@@ -41,6 +45,12 @@ const ChatBot = () => {
     recognition.onerror = () => setIsListening(false);
     recognition.onend = () => setIsListening(false);
   };
+const scrollToBottom = () => {
+  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+};
+useEffect(() => {
+  scrollToBottom();
+}, [messages]);
 
   const speakText = (message) => {
     const utterance = new SpeechSynthesisUtterance(message);
@@ -51,95 +61,184 @@ const ChatBot = () => {
     window.speechSynthesis.speak(utterance);
   };
 
-  const fetchAIReply = async (userText) => {
-    const cohereKey = "4aj7T4WPvK1YZidYNeOCnYHN1MFjLLWMuPLdIL3N";
-    const endpoint = "https://api.cohere.ai/v1/chat";
+  const fetchAIReply = async (userText, language = 'en-IN') => {
+  const cohereKey = "4aj7T4WPvK1YZidYNeOCnYHN1MFjLLWMuPLdIL3N";
+  const endpoint = "https://api.cohere.ai/v1/chat";
 
-    const headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${cohereKey}`,
-    };
-
-    const body = {
-      message: userText,
-      model: "command-r-plus",
-      temperature: 0.7,
-      max_tokens: 300,
-      chat_history: [],
-    };
-
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
-      const data = await response.json();
-      return data.text || "⚠️ कोई उत्तर नहीं मिला।";
-    } catch (err) {
-      console.error("Cohere Error:", err);
-      return "⚠️ AI से संपर्क नहीं हो सका।";
-    }
+  const languageMap = {
+    'en-IN': 'English',
+    'hi-IN': 'Hindi',
+    'bn-IN': 'Bengali',
+    'gu-IN': 'Gujarati',
+    'ta-IN': 'Tamil',
+    'te-IN': 'Telugu',
+    'mr-IN': 'Marathi',
+    'pa-IN': 'Punjabi',
+    'kn-IN': 'Kannada',
+    'ml-IN': 'Malayalam',
+    'ur-IN': 'Urdu'
   };
 
-  const sendMessage = async () => {
-    if (!text.trim()) return;
-    const userMessage = { sender: 'user', text };
-    setMessages((prev) => {
-      const updated = [...prev, userMessage];
-      localStorage.setItem('chat-history', JSON.stringify(updated));
-      return updated;
+  const selectedLanguage = languageMap[language] || 'English';
+
+  const headers = {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${cohereKey}`,
+  };
+
+    const body = {
+    message: `Answer in ${selectedLanguage}. If possible, keep it short (1–2 sentences), but ensure the answer is complete and not cut off. Respond to: ${userText}`,
+    model: "command-r-plus",
+    temperature: 0.3, // More focused/precise
+    max_tokens: 300, // More room for complete short answers
+    chat_history: [],
+  };
+
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
     });
+    const data = await response.json();
+    return data.text?.trim() || "⚠️ कोई उत्तर नहीं मिला।";
+  } catch (err) {
+    console.error("Cohere Error:", err);
+    return "⚠️ AI से संपर्क नहीं हो सका।";
+  }
+};
+
+ const sendMessage = async () => {
+  if (!text.trim()) return;
+
+  const userMessage = { sender: 'user', text };
+  setMessages((prev) => {
+    const updated = [...prev, userMessage];
+    localStorage.setItem('chat-history', JSON.stringify(updated));
+    return updated;
+  });
+
+ if (expectingLocation) {
+  const city = text.trim();
+  setExpectingLocation(false);
+
+  // 1. Add a temporary "Searching..." message
+  const searchingId = Date.now(); // unique ID
+  const searchingMessage = {
+    id: searchingId,
+    sender: 'bot',
+    text: `🔍 Searching for clinics in ${city}...`,
+  };
+
+  setMessages((prev) => [...prev, searchingMessage]);
+
+  // 2. Get clinics
+  const clinicMessages = await searchClinicsWithNominatim(city);
+
+  // 3. Format clinic responses
+  const formatted = clinicMessages.map((msg) => ({
+    sender: 'bot',
+    text: msg.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>'),
+  }));
+
+  // 4. Replace "searching..." message with actual clinics
+  setMessages((prev) => {
+    // Remove the searching message using ID
+    const withoutSearching = prev.filter((m) => m.id !== searchingId);
+    return [...withoutSearching, ...formatted];
+  });
+
+  setText('');
+  return;
+}
 
     setText('');
     setIsLoading(true);
     const botReply = await fetchAIReply(text);
-    const botMessage = { sender: 'bot', text: botReply };
-    setMessages((prev) => {
-      const updated = [...prev, botMessage];
-      localStorage.setItem('chat-history', JSON.stringify(updated));
-      return updated;
-    });
-    speakText(botReply);
-    setIsLoading(false);
+
+// Optional trimming logic (to avoid extremely long replies)
+const maxLength = 400;
+const finalReply = botReply.length > maxLength
+  ? botReply.slice(0, maxLength).trim() + '...'
+  : botReply;
+
+const botMessage = { sender: 'bot', text: finalReply };
+
+
+setMessages((prev) => {
+  const updated = [...prev, botMessage];
+  localStorage.setItem('chat-history', JSON.stringify(updated));
+  return updated;
+});
+
+speakText(botReply);  // Use full response
+ // use shortened text here too
+setIsLoading(false);
+
   };
 
   const searchClinics = async () => {
-    if (!clinicQuery.trim()) return;
-    setIsLoading(true);
-    const userMessage = { sender: 'user', text: `Clinics near ${clinicQuery}` };
-    setMessages((prev) => [...prev, userMessage]);
+  if (!clinicQuery.trim()) {
+    setMessages((prev) => [
+      ...prev,
+      { sender: 'bot', text: '⚠️ Please enter your city to find clinics.' },
+    ]);
+    return;
+  }
 
-    try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=clinic near ${encodeURIComponent(clinicQuery)}`;
-      const response = await fetch(url);
-      const data = await response.json();
+  // Simulate fetching clinics (replace with real API if needed)
+  const fakeClinics = [
+    { name: "Apollo Clinic", address: `${clinicQuery} Apollo Clinic` },
+    { name: "CityCare Hospital", address: `${clinicQuery} CityCare Hospital` },
+    { name: "LifeLine Medical Centre", address: `${clinicQuery} LifeLine Medical Centre` }
+  ];
 
-      if (data.length === 0) {
-        const msg = `⚠️ No clinics found near "${clinicQuery}".`;
-        setMessages((prev) => [...prev, { sender: 'bot', text: msg }]);
-        speakText(msg);
-      } else {
-        const intro = { sender: 'bot', text: '🧭 Nearby clinics:' };
-        const clinicMessages = data.slice(0, 5).map((place) => ({
-          sender: 'bot',
-          text: `📍 <a href="https://www.google.com/maps?q=${encodeURIComponent(place.display_name)}" target="_blank">${place.display_name}</a><br/><br/>`
-        }));
+  const introMessage = { sender: 'bot', text: `🔍 Searching for clinics in ${clinicQuery}...` };
+  const clinicLinks = fakeClinics.map(clinic => ({
+    sender: 'bot',
+    text: `🏥 <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clinic.address)}" target="_blank">${clinic.name}</a>`
+  }));
 
-        setMessages((prev) => {
-          const updated = [...prev, intro, ...clinicMessages];
-          localStorage.setItem('chat-history', JSON.stringify(updated));
-          return updated;
-        });
-        speakText(`Nearby clinics found: ${clinicMessages.length}`);
+  setMessages((prev) => [...prev, introMessage, ...clinicLinks]);
+  setClinicQuery(''); // Optional: clear input after search
+};
+
+// Example: React function to fetch nearby clinics using OpenStreetMap (Nominatim)
+
+const searchClinicsWithNominatim = async (city) => {
+  const query = `clinic in ${encodeURIComponent(city)}`;
+  const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json`;
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'YourAppName/1.0 (your@email.com)'  // Required by Nominatim usage policy
       }
-    } catch (err) {
-      console.error(err);
-      const msg = "⚠️ Error fetching clinic data.";
-      setMessages((prev) => [...prev, { sender: 'bot', text: msg }]);
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch clinics');
     }
-    setIsLoading(false);
-  };
+
+    const data = await response.json();
+
+    if (data.length === 0) {
+      return [`❌ No clinics found in ${city}`];
+    }
+
+    const clinics = data.slice(0, 5).map(item => {
+      const name = item.display_name.split(',')[0];
+      const link = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.display_name)}`;
+      return `🏥 [${name}](${link})`;
+    });
+
+    return clinics;
+  } catch (error) {
+    return [`❗ Error: ${error.message}`];
+  }
+};
+
 
   const healthTips = [
     "🩹 For small cuts, rinse with clean water and apply antiseptic.",
@@ -154,21 +253,8 @@ const ChatBot = () => {
 
   const sendHealthTips = () => {
     const tips = healthTips.map((tip) => ({ sender: 'bot', text: tip }));
-    setMessages((prev) => {
-      const updated = [...prev, ...tips];
-      localStorage.setItem('chat-history', JSON.stringify(updated));
-      return updated;
-    });
-
-    tips.forEach((tip, i) => {
-      setTimeout(() => speakText(tip.text), i * 2500);
-    });
+    setMessages((prev) => [...prev, ...tips]);
   };
-
-  useEffect(() => {
-    const chatDiv = document.getElementById('chat-window');
-    if (chatDiv) chatDiv.scrollTop = chatDiv.scrollHeight;
-  }, [messages]);
 
   const languageOptions = [
     { code: 'en-IN', name: 'English (India)' },
@@ -192,7 +278,6 @@ const ChatBot = () => {
             text-decoration: none;
             color: #0077cc;
           }
-
           .chat-message a:hover {
             text-decoration: underline;
           }
@@ -200,102 +285,262 @@ const ChatBot = () => {
       </style>
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <div style={{ textAlign: 'center', marginBottom: '10px', lineHeight: '1.2' }}>
-  <h2 style={{ margin: '0', fontSize: '1.4rem' }}>🤖 भारत हेल्थ साथी</h2>
-  <div style={{ fontSize: '1rem', color: '#555' }}>Bharat Health Ally</div>
+
+      <div style={{
+  width: '100%',
+  maxWidth: '520px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  position: 'relative',
+  marginBottom: '10px'
+}}>
+  {/* Hamburger Icon */}
+  <button
+    onClick={() => setMenuOpen(!menuOpen)}
+    style={{
+      position: 'absolute',
+      left: '0',
+      fontSize: '20px',
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      paddingLeft: '5px'  // optional tighter spacing
+    }}
+  >
+    ☰
+  </button>
+  {/* Dropdown Menu */}
+{menuOpen && (
+  <div
+    style={{
+      position: 'absolute',
+      top: '40px',
+      left: '0',
+      background: '#fff',
+      borderRadius: '12px',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+      zIndex: 1000,
+      minWidth: '120px',
+    }}
+  >
+    <div
+      onClick={() => {
+        setMessages([]);         // Clear all chat messages
+  setText('');             // Clear the input field
+  localStorage.removeItem('chat-history');
+        setMenuOpen(false);
+      }}
+      style={{
+        padding: '10px 16px',
+        cursor: 'pointer',
+        borderBottom: '1px solid #eee',
+      }}
+      onMouseEnter={e => (e.target.style.background = '#f0f0f0')}
+      onMouseLeave={e => (e.target.style.background = '#fff')}
+    >
+      New Chat
+    </div>
+
+    <div
+      onClick={() => {
+  setExpectingLocation(true);
+  setMessages(prev => [
+    ...prev,
+    { sender: 'bot', text: '📍 Please enter your city to find nearby clinics.' }
+  ]);
+  setMenuOpen(false);
+
+
+      }}
+      style={{
+        padding: '10px 16px',
+        cursor: 'pointer',
+        borderBottom: '1px solid #eee',
+      }}
+      onMouseEnter={e => (e.target.style.background = '#f0f0f0')}
+      onMouseLeave={e => (e.target.style.background = '#fff')}
+    >
+      Find Clinic
+    </div>
+
+    <div
+      onClick={() => {
+        sendHealthTips(); // Your predefined first aid tips
+        setMenuOpen(false);
+      }}
+      style={{
+        padding: '10px 16px',
+        cursor: 'pointer',
+      }}
+      onMouseEnter={e => (e.target.style.background = '#f0f0f0')}
+      onMouseLeave={e => (e.target.style.background = '#fff')}
+    >
+      First Aid
+    </div>
+  </div>
+)}
+
+
+  {/* Heading Centered */}
+  <div style={{ textAlign: 'center' }}>
+    <h2 style={{ margin: '0', fontSize: '1.4rem' }}>🤖 भारत हेल्थ साथी</h2>
+    <div style={{ fontSize: '1rem', color: '#555' }}>
+      Bharat Health Ally
+    </div>
+  </div>
 </div>
 
 
 
         <div
-          id="chat-window"
-          style={{
-            height: '400px',
-            width: '350px',
-            overflowY: 'auto',
-            border: '1px solid #ccc',
-            padding: '10px',
-            marginBottom: '10px',
-            backgroundColor: '#fdfdfd'
-          }}
-        >
-          {messages.map((msg, idx) => {
-            const isBot = msg.sender === 'bot';
-            const isClinicLink = msg.text.includes('<a href="https://www.google.com/maps');
-
-            return (
-              <div
-  key={idx}
+  id="chat-window"
   style={{
-    display: 'flex',
-    justifyContent: isBot ? 'flex-start' : 'flex-end',
-    marginBottom: '8px',
+    height: '480px',
+    width: '500px',
+    overflowY: 'auto',
+    border: '1px solid #ccc',
+    padding: '10px',
+    marginBottom: '10px',
+    backgroundColor: '#fdfdfd',
+    borderRadius: '16px', // ⤴️ Rounded corners
+    boxShadow: '0 4px 12px rgba(173, 216, 230, 0.5)' // ⤴️ Light blue shadow
   }}
 >
-  <div
-    className="chat-message"
-    style={{
-      backgroundColor: isBot ? '#E3F2FD' : '#D3D3D3',
-      color: '#212529',
-      borderRadius: '12px',
-      padding: '8px 12px',
-      maxWidth: '80%',
-      wordWrap: 'break-word',
-      fontSize: '14px',
-    }}
-  >
-    <span dangerouslySetInnerHTML={{ __html: msg.text }} />
-  </div>
-</div>
-
-
+          {messages.map((msg, idx) => {
+            const isBot = msg.sender === 'bot';
+            return (
+              <div key={idx} style={{
+                display: 'flex',
+                justifyContent: isBot ? 'flex-start' : 'flex-end',
+                marginBottom: '8px',
+              }}>
+                <div className="chat-message" style={{
+                  backgroundColor: isBot ? '#E3F2FD' : '#D3D3D3',
+                  color: '#212529',
+                  borderRadius: '12px',
+                  padding: '8px 12px',
+                  maxWidth: '80%',
+                  whiteSpace: 'normal',
+overflow: 'visible',
+wordBreak: 'break-word',
+                  wordWrap: 'break-word',
+                  fontSize: '14px',
+                }}>
+                  <span dangerouslySetInnerHTML={{ __html: msg.text }} />
+                </div>
+              </div>
             );
           })}
+          <div ref={messagesEndRef} />
 
           {isLoading && <div style={{ textAlign: 'left', fontStyle: 'italic', color: '#666' }}>Bot is typing...</div>}
         </div>
 
-        <div style={{ width: '350px', display: 'flex', gap: '10px', marginBottom: '10px' }}>
-          <input
-            type="text"
-            value={text}
-            placeholder="Type or speak your question..."
-            onChange={(e) => setText(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button onClick={sendMessage}>Send</button>
-          <button onClick={startListening}>🎤</button>
-        </div>
+        {/* Message Input & Controls */}
+        <div style={{
+  width: '500px',
+  display: 'flex',
+  alignItems: 'center',
+  marginBottom: '12px',
+  background: '#fff',
+  borderRadius: '20px',
+  padding: '6px 10px',
+  boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+  border: '1px solid #ccc'
+}}>
+  <input
+    type="text"
+    value={text}
+    placeholder="Type or speak your question..."
+    onChange={(e) => setText(e.target.value)}
+    onKeyDown={(e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    sendMessage(); // your function to send the message
+  }
+}}
 
-        <div style={{ marginBottom: '10px' }}>
-          <strong>{isListening ? '🎙️ Listening...' : '🎧 Mic Idle'}</strong>
-        </div>
+    style={{
+      flex: 1,
+      border: 'none',
+      outline: 'none',
+      fontSize: '14px',
+      padding: '6px'
+    }}
+  />
+  <button
+    onClick={sendMessage}
+    title="Send"
+    style={{
+      background: 'none',
+      border: 'none',
+      fontSize: '18px',
+      cursor: 'pointer',
+      marginLeft: '6px'
+    }}
+  >
+    ⬆️
+  </button>
+  <button
+    onClick={startListening}
+    title="Speak"
+    style={{
+      background: 'none',
+      border: 'none',
+      fontSize: '18px',
+      cursor: 'pointer',
+      marginLeft: '6px'
+    }}
+  >
+    🎤
+  </button>
+  <button
+    onClick={() => speakText(text)}
+    title="Read Aloud"
+    style={{
+      background: 'none',
+      border: 'none',
+      fontSize: '18px',
+      cursor: 'pointer',
+      marginLeft: '6px'
+    }}
+  >
+    🔊
+  </button>
+</div>
 
-        <div style={{ marginBottom: '15px' }}>
-          <label>Language: </label>
-          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-            {languageOptions.map((lang) => (
-              <option key={lang.code} value={lang.code}>{lang.name}</option>
-            ))}
-          </select>
-        </div>
 
-        <div style={{ width: '350px', display: 'flex', gap: '10px', marginBottom: '10px' }}>
-          <input
-            type="text"
-            placeholder="Enter your city (e.g., Delhi)"
-            value={clinicQuery}
-            onChange={(e) => setClinicQuery(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button onClick={searchClinics}>Find Clinics</button>
-        </div>
+       <div style={{ 
+  marginBottom: '15px', 
+  display: 'flex', 
+  alignItems: 'center', 
+  gap: '10px' 
+}}>
+  <label style={{ fontWeight: 'bold' }}>Language:</label>
+  <select
+    value={language}
+    onChange={(e) => setLanguage(e.target.value)}
+    style={{
+      padding: '6px 12px',
+      borderRadius: '12px',         // ✅ Curved
+      boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)', // ✅ Shadow
+      border: '1px solid #ccc',
+      outline: 'none',
+      cursor: 'pointer',
+      backgroundColor: '#fff',
+      fontSize: '14px',
+      minWidth: '160px'
+    }}
+  >
+    {languageOptions.map((lang) => (
+      <option key={lang.code} value={lang.code}>
+        {lang.name}
+      </option>
+    ))}
+  </select>
+</div>
 
-        <div style={{ width: '350px', marginBottom: '10px' }}>
-          <button onClick={sendHealthTips} style={{ width: '100%' }}>
-            🩺 Show First Aid & Wellness Tips
-          </button>
-        </div>
       </div>
     </>
   );
